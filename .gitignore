@@ -1,0 +1,13 @@
+# Secrets (絶対にコミットしないこと)
+.streamlit/secrets.toml
+
+# データベース (デプロイ先では再生成される)
+data/
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+venv/
+.venv/
