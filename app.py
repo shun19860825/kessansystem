@@ -135,142 +135,96 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 1 ── 製品売上一覧
+# TAB 1 ── 製品売上一覧（PDFデータ）
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
     st.subheader("製品別売上一覧")
 
-    rows = db.get_product_sales_summary()
-    if not rows:
-        st.info("データがありません")
-    else:
-        df_raw = pd.DataFrame([dict(r) for r in rows])
-
-        col_tbl, col_chart = st.columns([1, 1], gap="large")
-
-        with col_tbl:
-            df_show = pd.DataFrame({
-                "製品名":   df_raw["product_name"],
-                "カテゴリ": df_raw["category"].fillna("—"),
-                "販売数量": df_raw["total_quantity"].map(lambda x: f"{int(x):,}"),
-                "売上合計": df_raw["total_revenue"].map(lambda x: f"¥{x:,.0f}"),
-                "代理店数": df_raw["agency_count"].astype(int),
-            })
-            st.dataframe(df_show, use_container_width=True, height=460,
-                         hide_index=True)
-
-        with col_chart:
-            chart_type = st.radio(
-                "グラフ種別",
-                ["売上金額（棒）", "売上構成（円）", "販売数量（棒）"],
-                horizontal=True,
-                key="p_chart",
-            )
-            top10 = df_raw.nlargest(10, "total_revenue").copy()
-
-            if chart_type == "売上構成（円）":
-                fig = px.pie(
-                    top10, values="total_revenue", names="product_name",
-                    title="製品別売上構成 TOP10", hole=0.35,
-                )
-                fig.update_traces(textposition="inside", textinfo="percent+label")
-
-            elif chart_type == "販売数量（棒）":
-                fig = px.bar(
-                    top10.sort_values("total_quantity"),
-                    x="total_quantity", y="product_name",
-                    color="category", orientation="h",
-                    title="製品別販売数量 TOP10",
-                    labels={"total_quantity": "販売数量", "product_name": "製品名",
-                            "category": "カテゴリ"},
-                )
-
-            else:
-                fig = px.bar(
-                    top10.sort_values("total_revenue"),
-                    x="total_revenue", y="product_name",
-                    color="category", orientation="h",
-                    title="製品別売上 TOP10",
-                    labels={"total_revenue": "売上（円）", "product_name": "製品名",
-                            "category": "カテゴリ"},
-                )
-                fig.update_xaxes(tickformat=",.0f")
-
-            fig.update_layout(legend_title_text="カテゴリ", margin=dict(l=0, r=0, t=40, b=0))
-            st.plotly_chart(fig, use_container_width=True)
-
-        # カテゴリ別集計
-        st.divider()
-        st.markdown("**カテゴリ別集計**")
-        df_cat = (df_raw.groupby("category", as_index=False)
-                  .agg(製品数=("product_name", "count"),
-                       販売数量=("total_quantity", "sum"),
-                       売上合計=("total_revenue", "sum")))
-        df_cat["売上合計"] = df_cat["売上合計"].map(lambda x: f"¥{x:,.0f}")
-        df_cat["販売数量"] = df_cat["販売数量"].map(lambda x: f"{int(x):,}")
-        df_cat.columns = ["カテゴリ", "製品数", "販売数量", "売上合計"]
-        st.dataframe(df_cat, use_container_width=True, hide_index=True)
-
-    # ── PDFデータ 商品別売上一覧 ──────────────────────────────────────────────
-    st.divider()
-    st.markdown("### 📄 PDFデータ 商品別売上一覧")
-
-    # 古いキャッシュ残留対策：メソッドが存在しない場合は再初期化
+    # 古いキャッシュ対策
     if not hasattr(db, "get_pdf_product_summary"):
         st.cache_resource.clear()
         st.rerun()
 
     pdf_prod_rows = db.get_pdf_product_summary()
+
     if not pdf_prod_rows:
         st.info("PDFデータがありません。「👤 担当者別売上実績」タブからPDFを取り込んでください。")
     else:
         df_pdf = pd.DataFrame([dict(r) for r in pdf_prod_rows])
-        df_pdf["total_sales"]         = df_pdf["total_sales"].astype(float)
-        df_pdf["total_gross_profit"]  = df_pdf["total_gross_profit"].astype(float)
-        df_pdf["total_quantity"]      = df_pdf["total_quantity"].astype(float)
+        df_pdf["total_sales"]           = df_pdf["total_sales"].astype(float)
+        df_pdf["total_gross_profit"]    = df_pdf["total_gross_profit"].astype(float)
+        df_pdf["total_quantity"]        = df_pdf["total_quantity"].astype(float)
         df_pdf["avg_gross_profit_rate"] = df_pdf["avg_gross_profit_rate"].astype(float)
 
-        # KPI
-        pk1, pk2, pk3 = st.columns(3)
-        pk1.metric("商品種類数",  f"{len(df_pdf):,}")
-        pk2.metric("総売上合計",  f"¥{df_pdf['total_sales'].sum()/1_000_000:.1f}M")
-        pk3.metric("平均粗利率",  f"{df_pdf['avg_gross_profit_rate'].mean():.1f}%")
+        # ── KPI カード ─────────────────────────────────────────────────────
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("商品種類数",   f"{len(df_pdf):,} 種")
+        k2.metric("総売上合計",   f"¥{df_pdf['total_sales'].sum()/1_000_000:.1f}M")
+        k3.metric("総数量",       f"{df_pdf['total_quantity'].sum():,.0f}")
+        k4.metric("集計担当者数", f"{df_pdf['rep_count'].max()} 名")
 
         st.divider()
-        col_tbl2, col_chart2 = st.columns([1.2, 1], gap="large")
 
-        with col_tbl2:
-            df_show2 = pd.DataFrame({
-                "商品コード": df_pdf["product_code"],
-                "商品名":     df_pdf["product_name"],
-                "単位":       df_pdf["unit"].fillna("—"),
-                "数量":       df_pdf["total_quantity"].map(lambda v: f"{v:,.2f}"),
-                "純売上額":   df_pdf["total_sales"].map(lambda v: f"¥{v:,.0f}"),
-                "粗利額":     df_pdf["total_gross_profit"].map(
-                    lambda v: f"¥{v:,.0f}" if v != 0 else "—"),
-                "粗利率":     df_pdf["avg_gross_profit_rate"].map(
-                    lambda v: f"{v:.1f}%" if v != 0 else "—"),
-                "担当者数":   df_pdf["rep_count"].astype(int),
+        col_tbl, col_chart = st.columns([1.2, 1], gap="large")
+
+        with col_tbl:
+            # 担当者フィルター
+            all_reps_t1 = ["全担当者"] + sorted(
+                r["rep_name"]
+                for r in db.get_rep_product_summary()
+            )
+            sel_rep_t1 = st.selectbox("担当者で絞り込み", all_reps_t1, key="t1_rep_filter")
+
+            if sel_rep_t1 == "全担当者":
+                df_view = df_pdf.copy()
+            else:
+                rows_filtered = db.get_rep_product_detail(rep_code=None)
+                df_all_detail = pd.DataFrame([dict(r) for r in rows_filtered])
+                df_view = (
+                    df_all_detail[df_all_detail["rep_name"] == sel_rep_t1]
+                    .groupby(["product_code", "product_name", "unit"], as_index=False)
+                    .agg(
+                        total_quantity=("quantity", "sum"),
+                        total_sales=("sales_amount", "sum"),
+                        total_gross_profit=("gross_profit", "sum"),
+                        avg_gross_profit_rate=("gross_profit_rate", "mean"),
+                        rep_count=("rep_name", "nunique"),
+                    )
+                    .sort_values("total_sales", ascending=False)
+                )
+
+            df_show = pd.DataFrame({
+                "商品コード": df_view["product_code"],
+                "商品名":     df_view["product_name"],
+                "単位":       df_view["unit"].fillna("—"),
+                "数量":       df_view["total_quantity"].map(lambda v: f"{v:,.2f}"),
+                "純売上額":   df_view["total_sales"].map(lambda v: f"¥{v:,.0f}"),
+                "粗利額":     df_view["total_gross_profit"].map(
+                    lambda v: f"¥{v:,.0f}" if float(v) != 0 else "—"),
+                "粗利率":     df_view["avg_gross_profit_rate"].map(
+                    lambda v: f"{float(v):.1f}%" if float(v) != 0 else "—"),
+                "担当者数":   df_view["rep_count"].astype(int),
             })
-            st.dataframe(df_show2, use_container_width=True, hide_index=True, height=500)
+            st.dataframe(df_show, use_container_width=True, hide_index=True, height=500)
 
-        with col_chart2:
-            pdf_chart_type = st.radio(
+        with col_chart:
+            chart_type = st.radio(
                 "グラフ種別",
                 ["売上 TOP20（棒）", "売上構成（円）"],
                 horizontal=True,
-                key="pdf_p_chart",
+                key="p_chart",
             )
-            top20 = df_pdf.head(20).copy()
+            top20 = df_view.head(20).copy()
+            top20["total_sales"] = top20["total_sales"].astype(float)
 
-            if pdf_chart_type == "売上構成（円）":
-                fig_pdf = px.pie(
+            if chart_type == "売上構成（円）":
+                fig = px.pie(
                     top20, values="total_sales", names="product_name",
                     title="商品別売上構成 TOP20", hole=0.35,
                 )
-                fig_pdf.update_traces(textposition="inside", textinfo="percent+label")
+                fig.update_traces(textposition="inside", textinfo="percent+label")
             else:
-                fig_pdf = px.bar(
+                fig = px.bar(
                     top20.sort_values("total_sales"),
                     x="total_sales", y="product_name",
                     orientation="h",
@@ -279,11 +233,11 @@ with tab1:
                     color="total_sales",
                     color_continuous_scale="Blues",
                 )
-                fig_pdf.update_xaxes(tickformat=",.0f")
-                fig_pdf.update_coloraxes(showscale=False)
+                fig.update_xaxes(tickformat=",.0f")
+                fig.update_coloraxes(showscale=False)
 
-            fig_pdf.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-            st.plotly_chart(fig_pdf, use_container_width=True)
+            fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+            st.plotly_chart(fig, use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
