@@ -215,6 +215,11 @@ with tab1:
     st.divider()
     st.markdown("### 📄 PDFデータ 商品別売上一覧")
 
+    # 古いキャッシュ残留対策：メソッドが存在しない場合は再初期化
+    if not hasattr(db, "get_pdf_product_summary"):
+        st.cache_resource.clear()
+        st.rerun()
+
     pdf_prod_rows = db.get_pdf_product_summary()
     if not pdf_prod_rows:
         st.info("PDFデータがありません。「👤 担当者別売上実績」タブからPDFを取り込んでください。")
