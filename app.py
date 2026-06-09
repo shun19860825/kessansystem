@@ -211,6 +211,75 @@ with tab1:
         df_cat.columns = ["カテゴリ", "製品数", "販売数量", "売上合計"]
         st.dataframe(df_cat, use_container_width=True, hide_index=True)
 
+    # ── PDFデータ 商品別売上一覧 ──────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 📄 PDFデータ 商品別売上一覧")
+
+    pdf_prod_rows = db.get_pdf_product_summary()
+    if not pdf_prod_rows:
+        st.info("PDFデータがありません。「👤 担当者別売上実績」タブからPDFを取り込んでください。")
+    else:
+        df_pdf = pd.DataFrame([dict(r) for r in pdf_prod_rows])
+        df_pdf["total_sales"]         = df_pdf["total_sales"].astype(float)
+        df_pdf["total_gross_profit"]  = df_pdf["total_gross_profit"].astype(float)
+        df_pdf["total_quantity"]      = df_pdf["total_quantity"].astype(float)
+        df_pdf["avg_gross_profit_rate"] = df_pdf["avg_gross_profit_rate"].astype(float)
+
+        # KPI
+        pk1, pk2, pk3 = st.columns(3)
+        pk1.metric("商品種類数",  f"{len(df_pdf):,}")
+        pk2.metric("総売上合計",  f"¥{df_pdf['total_sales'].sum()/1_000_000:.1f}M")
+        pk3.metric("平均粗利率",  f"{df_pdf['avg_gross_profit_rate'].mean():.1f}%")
+
+        st.divider()
+        col_tbl2, col_chart2 = st.columns([1.2, 1], gap="large")
+
+        with col_tbl2:
+            df_show2 = pd.DataFrame({
+                "商品コード": df_pdf["product_code"],
+                "商品名":     df_pdf["product_name"],
+                "単位":       df_pdf["unit"].fillna("—"),
+                "数量":       df_pdf["total_quantity"].map(lambda v: f"{v:,.2f}"),
+                "純売上額":   df_pdf["total_sales"].map(lambda v: f"¥{v:,.0f}"),
+                "粗利額":     df_pdf["total_gross_profit"].map(
+                    lambda v: f"¥{v:,.0f}" if v != 0 else "—"),
+                "粗利率":     df_pdf["avg_gross_profit_rate"].map(
+                    lambda v: f"{v:.1f}%" if v != 0 else "—"),
+                "担当者数":   df_pdf["rep_count"].astype(int),
+            })
+            st.dataframe(df_show2, use_container_width=True, hide_index=True, height=500)
+
+        with col_chart2:
+            pdf_chart_type = st.radio(
+                "グラフ種別",
+                ["売上 TOP20（棒）", "売上構成（円）"],
+                horizontal=True,
+                key="pdf_p_chart",
+            )
+            top20 = df_pdf.head(20).copy()
+
+            if pdf_chart_type == "売上構成（円）":
+                fig_pdf = px.pie(
+                    top20, values="total_sales", names="product_name",
+                    title="商品別売上構成 TOP20", hole=0.35,
+                )
+                fig_pdf.update_traces(textposition="inside", textinfo="percent+label")
+            else:
+                fig_pdf = px.bar(
+                    top20.sort_values("total_sales"),
+                    x="total_sales", y="product_name",
+                    orientation="h",
+                    title="商品別売上 TOP20",
+                    labels={"total_sales": "純売上額（円）", "product_name": "商品名"},
+                    color="total_sales",
+                    color_continuous_scale="Blues",
+                )
+                fig_pdf.update_xaxes(tickformat=",.0f")
+                fig_pdf.update_coloraxes(showscale=False)
+
+            fig_pdf.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+            st.plotly_chart(fig_pdf, use_container_width=True)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 2 ── 代理店売上推移

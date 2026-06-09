@@ -112,6 +112,25 @@ class Database:
         """)
         self.conn.commit()
 
+    # ── pdf product summary ───────────────────────────────────────────────────
+
+    def get_pdf_product_summary(self) -> list:
+        """rep_product_sales から商品コード・商品名ごとに集計して返す（summary行除外）。"""
+        return self.conn.execute("""
+            SELECT product_code,
+                   product_name,
+                   unit,
+                   SUM(quantity)          AS total_quantity,
+                   SUM(sales_amount)      AS total_sales,
+                   SUM(gross_profit)      AS total_gross_profit,
+                   AVG(gross_profit_rate) AS avg_gross_profit_rate,
+                   COUNT(DISTINCT rep_name) AS rep_count
+            FROM rep_product_sales
+            WHERE product_code != 'summary'
+            GROUP BY product_code, product_name, unit
+            ORDER BY total_sales DESC
+        """).fetchall()
+
     # ── agencies ──────────────────────────────────────────────────────────────
 
     def get_all_agencies(self) -> list:
