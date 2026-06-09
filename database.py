@@ -44,6 +44,41 @@ class Database:
                 FOREIGN KEY (agency_id)  REFERENCES agencies(id),
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
+            CREATE TABLE IF NOT EXISTS sales_reps_reports (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                period      TEXT NOT NULL,
+                start_date  DATE,
+                end_date    DATE,
+                report_type TEXT,
+                source_file TEXT,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS rep_product_sales (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id         INTEGER,
+                rep_code          TEXT DEFAULT '',
+                rep_name          TEXT NOT NULL,
+                product_code      TEXT DEFAULT '',
+                product_name      TEXT NOT NULL,
+                unit              TEXT DEFAULT '',
+                quantity          REAL DEFAULT 0,
+                sales_amount      REAL DEFAULT 0,
+                gross_profit      REAL DEFAULT 0,
+                gross_profit_rate REAL DEFAULT 0,
+                FOREIGN KEY (report_id) REFERENCES sales_reps_reports(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS rep_customer_sales (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id         INTEGER,
+                rep_code          TEXT DEFAULT '',
+                rep_name          TEXT NOT NULL,
+                customer_code     TEXT DEFAULT '',
+                customer_name     TEXT NOT NULL,
+                sales_amount      REAL DEFAULT 0,
+                gross_profit      REAL DEFAULT 0,
+                gross_profit_rate REAL DEFAULT 0,
+                FOREIGN KEY (report_id) REFERENCES sales_reps_reports(id) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS financial_statements (
                 id                     INTEGER PRIMARY KEY AUTOINCREMENT,
                 fiscal_year            TEXT NOT NULL,
@@ -199,6 +234,124 @@ class Database:
     def delete_financial_statement(self, stmt_id: int) -> None:
         self.conn.execute("DELETE FROM financial_statements WHERE id=?", (stmt_id,))
         self.conn.commit()
+
+    # ── sales reps reports ────────────────────────────────────────────────────
+
+    def add_sales_report(self, period: str, start_date: str, end_date: str,
+                         report_type: str, source_file: str = "") -> int:
+        cur = self.conn.execute(
+            "INSERT INTO sales_reps_reports (period, start_date, end_date, report_type, source_file) VALUES (?,?,?,?,?)",
+            (period, start_date or None, end_date or None, report_type, source_file),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def add_rep_product_sales_batch(self, report_id: int, rows: list) -> None:
+        self.conn.executemany(
+            """INSERT INTO rep_product_sales
+               (report_id, rep_code, rep_name, product_code, product_name, unit,
+                quantity, sales_amount, gross_profit, gross_profit_rate)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            [(report_id, *r) for r in rows],
+        )
+        self.conn.commit()
+
+    def add_rep_customer_sales_batch(self, report_id: int, rows: list) -> None:
+        self.conn.executemany(
+            """INSERT INTO rep_customer_sales
+               (report_id, rep_code, rep_name, customer_code, customer_name,
+                sales_amount, gross_profit, gross_profit_rate)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            [(report_id, *r) for r in rows],
+        )
+        self.conn.commit()
+
+    def get_all_sales_reports(self) -> list:
+        return self.conn.execute(
+            "SELECT * FROM sales_reps_reports ORDER BY created_at DESC"
+        ).fetchall()
+
+    def delete_sales_report(self, report_id: int) -> None:
+        self.conn.execute("DELETE FROM sales_reps_reports WHERE id=?", (report_id,))
+        self.conn.commit()
+
+    def get_rep_product_summary(self, report_ids: list | None = None) -> list:
+        if report_ids:
+            ph = ",".join("?" * len(report_ids))
+            return self.conn.execute(f"""
+                SELECT rep_code, rep_name,
+                       SUM(sales_amount)  AS total_sales,
+                       SUM(gross_profit)  AS total_gross_profit,
+                       SUM(quantity)      AS total_quantity
+                FROM rep_product_sales
+                WHERE report_id IN ({ph})
+                GROUP BY rep_code, rep_name
+                ORDER BY total_sales DESC
+            """, report_ids).fetchall()
+        return self.conn.execute("""
+            SELECT rep_code, rep_name,
+                   SUM(sales_amount)  AS total_sales,
+                   SUM(gross_profit)  AS total_gross_profit,
+                   SUM(quantity)      AS total_quantity
+            FROM rep_product_sales
+            GROUP BY rep_code, rep_name
+            ORDER BY total_sales DESC
+        """).fetchall()
+
+    def get_rep_product_detail(self, report_ids: list | None = None,
+                                rep_code: str | None = None) -> list:
+        params: list = []
+        where: list = []
+        if report_ids:
+            ph = ",".join("?" * len(report_ids))
+            where.append(f"report_id IN ({ph})")
+            params.extend(report_ids)
+        if rep_code:
+            where.append("rep_code = ?")
+            params.append(rep_code)
+        sql = "SELECT * FROM rep_product_sales"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY rep_name, sales_amount DESC"
+        return self.conn.execute(sql, params).fetchall()
+
+    def get_rep_customer_summary(self, report_ids: list | None = None) -> list:
+        if report_ids:
+            ph = ",".join("?" * len(report_ids))
+            return self.conn.execute(f"""
+                SELECT rep_code, rep_name,
+                       SUM(sales_amount)  AS total_sales,
+                       SUM(gross_profit)  AS total_gross_profit
+                FROM rep_customer_sales
+                WHERE report_id IN ({ph})
+                GROUP BY rep_code, rep_name
+                ORDER BY total_sales DESC
+            """, report_ids).fetchall()
+        return self.conn.execute("""
+            SELECT rep_code, rep_name,
+                   SUM(sales_amount)  AS total_sales,
+                   SUM(gross_profit)  AS total_gross_profit
+            FROM rep_customer_sales
+            GROUP BY rep_code, rep_name
+            ORDER BY total_sales DESC
+        """).fetchall()
+
+    def get_rep_customer_detail(self, report_ids: list | None = None,
+                                 rep_code: str | None = None) -> list:
+        params: list = []
+        where: list = []
+        if report_ids:
+            ph = ",".join("?" * len(report_ids))
+            where.append(f"report_id IN ({ph})")
+            params.extend(report_ids)
+        if rep_code:
+            where.append("rep_code = ?")
+            params.append(rep_code)
+        sql = "SELECT * FROM rep_customer_sales"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY rep_name, sales_amount DESC"
+        return self.conn.execute(sql, params).fetchall()
 
     def close(self) -> None:
         if self.conn:

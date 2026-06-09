@@ -17,7 +17,9 @@ import streamlit as st
 
 from database import Database
 from gemini_processor import process_pdf_with_gemini, validate_api_key
+from sales_processor import detect_report_type, process_sales_report_pdf
 from utils.sample_data import insert_sample_data
+from utils.initial_sales_data import insert_initial_sales_data
 
 # ── ページ設定（必ず最初の st 呼び出し） ─────────────────────────────────────
 st.set_page_config(
@@ -50,6 +52,7 @@ def get_db() -> Database:
     db = Database()
     db.initialize()
     insert_sample_data(db)
+    insert_initial_sales_data(db)
     return db
 
 
@@ -122,11 +125,12 @@ st.title("📊 ビジネス分析ダッシュボード")
 st.divider()
 
 # ── タブ ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📦 製品売上一覧",
     "📈 代理店売上推移",
     "🔄 新規代理店リピート率",
     "📋 決算書分析",
+    "👤 担当者別売上実績",
 ])
 
 
@@ -607,3 +611,290 @@ with tab4:
             st.dataframe(
                 pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True
             )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 5 ── 担当者別売上実績
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab5:
+    st.subheader("担当者別売上実績")
+
+    all_reports = list(db.get_all_sales_reports())
+
+    # ── サイドパネル：レポート選択 & PDF アップロード ─────────────────────
+    col_side, col_main = st.columns([1, 2.5], gap="large")
+
+    with col_side:
+        st.markdown("**📁 取り込み済みレポート**")
+
+        if all_reports:
+            report_options = {f"{r['period']} [{r['report_type']}]": r["id"]
+                              for r in all_reports}
+            selected_labels = st.multiselect(
+                "表示するレポートを選択",
+                options=list(report_options.keys()),
+                default=list(report_options.keys()),
+                key="rep_report_sel",
+            )
+            selected_ids = [report_options[lbl] for lbl in selected_labels]
+
+            st.divider()
+            del_label = st.selectbox(
+                "削除するレポート",
+                ["選択..."] + list(report_options.keys()),
+                key="rep_del_sel",
+            )
+            if del_label != "選択..." and st.button("🗑️ 削除", type="secondary", key="rep_del_btn"):
+                db.delete_sales_report(report_options[del_label])
+                st.success(f"削除: {del_label}")
+                st.cache_resource.clear()
+                st.rerun()
+        else:
+            selected_ids = []
+            st.info("レポートがありません")
+
+        # ── PDF アップロード ────────────────────────────────────────────
+        st.divider()
+        st.markdown("**📄 PDFを取り込む**")
+        st.caption("担当者別商品別 または 担当者別得意先別 売上実績表PDFをアップロードしてください。")
+
+        uploaded_sales_pdf = st.file_uploader(
+            "売上実績表 PDF",
+            type=["pdf"],
+            key="sales_pdf_up",
+        )
+        if uploaded_sales_pdf:
+            rtype_hint = detect_report_type(uploaded_sales_pdf.name)
+            rtype_labels = {
+                "product":  "担当者別商品別",
+                "customer": "担当者別得意先別",
+                "unknown":  "自動判定",
+            }
+            st.caption(f"判定種別: {rtype_labels.get(rtype_hint, '不明')}")
+
+            if st.button("🤖 Geminiで解析・取り込み", type="primary", key="sales_pdf_btn"):
+                cur_key = st.session_state.get("api_key", "")
+                if not cur_key:
+                    st.error("サイドバーでGemini API Keyを設定してください")
+                else:
+                    with st.spinner("Gemini AIで解析中...（大きなPDFは数十秒かかります）"):
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                            tmp.write(uploaded_sales_pdf.read())
+                            tmp_path = tmp.name
+                        try:
+                            result = process_sales_report_pdf(tmp_path, cur_key, rtype_hint)
+                            period  = result.get("period", uploaded_sales_pdf.name)
+                            rtype   = result.get("report_type", rtype_hint)
+                            rows    = result.get("rows", [])
+
+                            report_id = db.add_sales_report(
+                                period, "", "", rtype, uploaded_sales_pdf.name
+                            )
+
+                            if rtype == "product":
+                                batch = [
+                                    (r.get("rep_code", ""),
+                                     r.get("rep_name", ""),
+                                     r.get("product_code", ""),
+                                     r.get("product_name", ""),
+                                     r.get("unit", ""),
+                                     float(r.get("quantity", 0) or 0),
+                                     float(r.get("sales_amount", 0) or 0),
+                                     float(r.get("gross_profit", 0) or 0),
+                                     float(r.get("gross_profit_rate", 0) or 0))
+                                    for r in rows
+                                ]
+                                db.add_rep_product_sales_batch(report_id, batch)
+                            else:
+                                batch = [
+                                    (r.get("rep_code", ""),
+                                     r.get("rep_name", ""),
+                                     r.get("customer_code", ""),
+                                     r.get("customer_name", ""),
+                                     float(r.get("sales_amount", 0) or 0),
+                                     float(r.get("gross_profit", 0) or 0),
+                                     float(r.get("gross_profit_rate", 0) or 0))
+                                    for r in rows
+                                ]
+                                db.add_rep_customer_sales_batch(report_id, batch)
+
+                            st.success(
+                                f"✅ 取り込み完了: {period}（{len(rows):,}行）"
+                            )
+                            st.cache_resource.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"エラー: {e}")
+                        finally:
+                            if os.path.exists(tmp_path):
+                                os.remove(tmp_path)
+
+    # ── メインコンテンツ ────────────────────────────────────────────────────
+    with col_main:
+        # 商品別サマリー取得
+        prod_summary = list(db.get_rep_product_summary(selected_ids if selected_ids else None))
+        cust_summary = list(db.get_rep_customer_summary(selected_ids if selected_ids else None))
+
+        if not prod_summary and not cust_summary:
+            st.info("データがありません。左のパネルからPDFを取り込んでください。")
+        else:
+            # ── KPI カード ─────────────────────────────────────────────
+            total_sales = sum(float(r["total_sales"] or 0) for r in prod_summary)
+            top_rep     = prod_summary[0]["rep_name"] if prod_summary else "—"
+            rep_count   = len(prod_summary)
+
+            k1, k2, k3 = st.columns(3)
+            k1.metric("総売上", f"¥{total_sales/1_000_000:.1f}百万")
+            k2.metric("担当者数", rep_count)
+            k3.metric("トップ担当者", top_rep)
+
+            st.divider()
+
+            # ── 担当者別売上比較（横棒グラフ） ─────────────────────────
+            if prod_summary:
+                df_prod_sum = pd.DataFrame([dict(r) for r in prod_summary])
+                df_prod_sum["total_sales"] = df_prod_sum["total_sales"].astype(float)
+
+                fig_bar = px.bar(
+                    df_prod_sum.sort_values("total_sales"),
+                    x="total_sales",
+                    y="rep_name",
+                    orientation="h",
+                    title="担当者別 純売上額",
+                    labels={"total_sales": "純売上額（円）", "rep_name": "担当者"},
+                    color="total_sales",
+                    color_continuous_scale="Blues",
+                    text=df_prod_sum.sort_values("total_sales")["total_sales"].map(
+                        lambda v: f"¥{v/1_000_000:.1f}M"
+                    ),
+                )
+                fig_bar.update_traces(textposition="outside")
+                fig_bar.update_xaxes(tickformat=",.0f")
+                fig_bar.update_coloraxes(showscale=False)
+                fig_bar.update_layout(margin=dict(l=0, r=60, t=40, b=0))
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+                # ── 担当者別シェア（円グラフ） ────────────────────────
+                with st.expander("担当者別売上シェア（円グラフ）"):
+                    fig_pie = px.pie(
+                        df_prod_sum,
+                        values="total_sales",
+                        names="rep_name",
+                        title="担当者別 売上シェア",
+                        hole=0.35,
+                    )
+                    fig_pie.update_traces(textinfo="percent+label", textposition="inside")
+                    fig_pie.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig_pie, use_container_width=True)
+
+            st.divider()
+
+            # ── 担当者別売上一覧テーブル ──────────────────────────────
+            view_mode = st.radio(
+                "詳細表示",
+                ["商品別売上", "得意先別売上"],
+                horizontal=True,
+                key="rep_view_mode",
+            )
+
+            # 担当者フィルター
+            all_rep_names = sorted({r["rep_name"] for r in (prod_summary + cust_summary)})
+            sel_rep = st.selectbox(
+                "担当者で絞り込み",
+                ["全担当者"] + all_rep_names,
+                key="rep_filter",
+            )
+            filter_code = None
+            if sel_rep != "全担当者":
+                # rep_code を特定
+                for r in (prod_summary + cust_summary):
+                    if r["rep_name"] == sel_rep:
+                        filter_code = r["rep_code"]
+                        break
+
+            if view_mode == "商品別売上":
+                detail_rows = list(db.get_rep_product_detail(
+                    selected_ids if selected_ids else None, filter_code
+                ))
+                if not detail_rows:
+                    st.info("商品別データがありません。PDFを取り込んでください。")
+                else:
+                    df_detail = pd.DataFrame([dict(r) for r in detail_rows])
+                    df_detail["sales_amount"]  = df_detail["sales_amount"].astype(float)
+                    df_detail["gross_profit"]  = df_detail["gross_profit"].astype(float)
+                    df_detail["quantity"]      = df_detail["quantity"].astype(float)
+
+                    # 担当者ごとに集計した上位商品グラフ
+                    top_n = df_detail[df_detail["product_code"] != "summary"].nlargest(15, "sales_amount")
+                    if not top_n.empty:
+                        fig_prod = px.bar(
+                            top_n.sort_values("sales_amount"),
+                            x="sales_amount",
+                            y="product_name",
+                            color="rep_name",
+                            orientation="h",
+                            title="商品別売上 TOP15",
+                            labels={"sales_amount": "売上（円）", "product_name": "商品名",
+                                    "rep_name": "担当者"},
+                        )
+                        fig_prod.update_xaxes(tickformat=",.0f")
+                        fig_prod.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(fig_prod, use_container_width=True)
+
+                    # テーブル表示
+                    st.markdown(f"**商品別売上一覧** （{len(df_detail):,}件）")
+                    df_show = pd.DataFrame({
+                        "担当者":   df_detail["rep_name"],
+                        "商品コード": df_detail["product_code"],
+                        "商品名":   df_detail["product_name"],
+                        "単位":     df_detail["unit"],
+                        "数量":     df_detail["quantity"].map(lambda v: f"{v:,.2f}"),
+                        "純売上額": df_detail["sales_amount"].map(lambda v: f"¥{v:,.0f}"),
+                        "粗利額":   df_detail["gross_profit"].map(
+                            lambda v: f"¥{v:,.0f}" if v != 0 else "—"),
+                        "粗利率":   df_detail["gross_profit_rate"].map(
+                            lambda v: f"{v:.1f}%" if v != 0 else "—"),
+                    })
+                    st.dataframe(df_show, use_container_width=True,
+                                 hide_index=True, height=480)
+
+            else:  # 得意先別売上
+                cust_rows = list(db.get_rep_customer_detail(
+                    selected_ids if selected_ids else None, filter_code
+                ))
+                if not cust_rows:
+                    st.info("得意先別データがありません。担当者別得意先別売上実績表PDFを取り込んでください。")
+                else:
+                    df_cust = pd.DataFrame([dict(r) for r in cust_rows])
+                    df_cust["sales_amount"] = df_cust["sales_amount"].astype(float)
+                    df_cust["gross_profit"] = df_cust["gross_profit"].astype(float)
+
+                    top_cust = df_cust.nlargest(15, "sales_amount")
+                    fig_cust = px.bar(
+                        top_cust.sort_values("sales_amount"),
+                        x="sales_amount",
+                        y="customer_name",
+                        color="rep_name",
+                        orientation="h",
+                        title="得意先別売上 TOP15",
+                        labels={"sales_amount": "売上（円）", "customer_name": "得意先",
+                                "rep_name": "担当者"},
+                    )
+                    fig_cust.update_xaxes(tickformat=",.0f")
+                    fig_cust.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig_cust, use_container_width=True)
+
+                    st.markdown(f"**得意先別売上一覧** （{len(df_cust):,}件）")
+                    df_cust_show = pd.DataFrame({
+                        "担当者":     df_cust["rep_name"],
+                        "得意先コード": df_cust["customer_code"],
+                        "得意先名":   df_cust["customer_name"],
+                        "純売上額":   df_cust["sales_amount"].map(lambda v: f"¥{v:,.0f}"),
+                        "粗利額":     df_cust["gross_profit"].map(
+                            lambda v: f"¥{v:,.0f}" if v != 0 else "—"),
+                        "粗利率":     df_cust["gross_profit_rate"].map(
+                            lambda v: f"{v:.1f}%" if v != 0 else "—"),
+                    })
+                    st.dataframe(df_cust_show, use_container_width=True,
+                                 hide_index=True, height=480)
