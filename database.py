@@ -44,41 +44,6 @@ class Database:
                 FOREIGN KEY (agency_id)  REFERENCES agencies(id),
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
-            CREATE TABLE IF NOT EXISTS sales_reps_reports (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                period      TEXT NOT NULL,
-                start_date  DATE,
-                end_date    DATE,
-                report_type TEXT,
-                source_file TEXT,
-                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS rep_product_sales (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                report_id         INTEGER,
-                rep_code          TEXT DEFAULT '',
-                rep_name          TEXT NOT NULL,
-                product_code      TEXT DEFAULT '',
-                product_name      TEXT NOT NULL,
-                unit              TEXT DEFAULT '',
-                quantity          REAL DEFAULT 0,
-                sales_amount      REAL DEFAULT 0,
-                gross_profit      REAL DEFAULT 0,
-                gross_profit_rate REAL DEFAULT 0,
-                FOREIGN KEY (report_id) REFERENCES sales_reps_reports(id) ON DELETE CASCADE
-            );
-            CREATE TABLE IF NOT EXISTS rep_customer_sales (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                report_id         INTEGER,
-                rep_code          TEXT DEFAULT '',
-                rep_name          TEXT NOT NULL,
-                customer_code     TEXT DEFAULT '',
-                customer_name     TEXT NOT NULL,
-                sales_amount      REAL DEFAULT 0,
-                gross_profit      REAL DEFAULT 0,
-                gross_profit_rate REAL DEFAULT 0,
-                FOREIGN KEY (report_id) REFERENCES sales_reps_reports(id) ON DELETE CASCADE
-            );
             CREATE TABLE IF NOT EXISTS financial_statements (
                 id                     INTEGER PRIMARY KEY AUTOINCREMENT,
                 fiscal_year            TEXT NOT NULL,
@@ -102,6 +67,48 @@ class Database:
                 notes                  TEXT,
                 created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+        """)
+        self.conn.commit()
+
+        # 担当者別売上実績テーブル（executescript と分離して個別作成）
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS sales_reps_reports (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                period      TEXT NOT NULL,
+                start_date  DATE,
+                end_date    DATE,
+                report_type TEXT,
+                source_file TEXT,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_product_sales (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id         INTEGER,
+                rep_code          TEXT DEFAULT '',
+                rep_name          TEXT NOT NULL,
+                product_code      TEXT DEFAULT '',
+                product_name      TEXT NOT NULL,
+                unit              TEXT DEFAULT '',
+                quantity          REAL DEFAULT 0,
+                sales_amount      REAL DEFAULT 0,
+                gross_profit      REAL DEFAULT 0,
+                gross_profit_rate REAL DEFAULT 0
+            )
+        """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_customer_sales (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id         INTEGER,
+                rep_code          TEXT DEFAULT '',
+                rep_name          TEXT NOT NULL,
+                customer_code     TEXT DEFAULT '',
+                customer_name     TEXT NOT NULL,
+                sales_amount      REAL DEFAULT 0,
+                gross_profit      REAL DEFAULT 0,
+                gross_profit_rate REAL DEFAULT 0
+            )
         """)
         self.conn.commit()
 
@@ -272,6 +279,8 @@ class Database:
         ).fetchall()
 
     def delete_sales_report(self, report_id: int) -> None:
+        self.conn.execute("DELETE FROM rep_product_sales WHERE report_id=?", (report_id,))
+        self.conn.execute("DELETE FROM rep_customer_sales WHERE report_id=?", (report_id,))
         self.conn.execute("DELETE FROM sales_reps_reports WHERE id=?", (report_id,))
         self.conn.commit()
 
