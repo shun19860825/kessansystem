@@ -284,6 +284,10 @@ class Database:
         self.conn.execute("DELETE FROM financial_statements WHERE id=?", (stmt_id,))
         self.conn.commit()
 
+    def delete_financial_statements_by_source(self, source_file: str) -> None:
+        self.conn.execute("DELETE FROM financial_statements WHERE source_file=?", (source_file,))
+        self.conn.commit()
+
     # ── sales reps reports ────────────────────────────────────────────────────
 
     def add_sales_report(self, period: str, start_date: str, end_date: str,

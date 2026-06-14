@@ -27,57 +27,6 @@ PRODUCTS = [
     ("製品J-1000", "機械部品", 80_000),
 ]
 
-FINANCIAL = [
-    {"fiscal_year": "2020年3月期", "period_start": "2019-04-01", "period_end": "2020-03-31",
-     "sales": 258_000, "cost_of_goods": 158_000, "gross_profit": 100_000,
-     "fixed_costs": 42_000, "variable_costs": 34_000, "selling_expenses": 22_000,
-     "general_admin_expenses": 18_000, "operating_profit": 18_000,
-     "non_operating_income": 600, "non_operating_expenses": 1_400,
-     "ordinary_profit": 17_200, "extraordinary_income": 0, "extraordinary_loss": 1_500,
-     "net_profit": 11_000, "source_file": "サンプルデータ"},
-
-    {"fiscal_year": "2021年3月期", "period_start": "2020-04-01", "period_end": "2021-03-31",
-     "sales": 285_000, "cost_of_goods": 171_000, "gross_profit": 114_000,
-     "fixed_costs": 45_000, "variable_costs": 38_000, "selling_expenses": 25_000,
-     "general_admin_expenses": 20_000, "operating_profit": 26_000,
-     "non_operating_income": 800, "non_operating_expenses": 1_200,
-     "ordinary_profit": 25_600, "extraordinary_income": 0, "extraordinary_loss": 2_000,
-     "net_profit": 16_000, "source_file": "サンプルデータ"},
-
-    {"fiscal_year": "2022年3月期", "period_start": "2021-04-01", "period_end": "2022-03-31",
-     "sales": 312_000, "cost_of_goods": 183_000, "gross_profit": 129_000,
-     "fixed_costs": 47_000, "variable_costs": 41_000, "selling_expenses": 27_000,
-     "general_admin_expenses": 22_000, "operating_profit": 32_000,
-     "non_operating_income": 1_000, "non_operating_expenses": 1_100,
-     "ordinary_profit": 31_900, "extraordinary_income": 500, "extraordinary_loss": 0,
-     "net_profit": 22_000, "source_file": "サンプルデータ"},
-
-    {"fiscal_year": "2023年3月期", "period_start": "2022-04-01", "period_end": "2023-03-31",
-     "sales": 298_000, "cost_of_goods": 178_800, "gross_profit": 119_200,
-     "fixed_costs": 48_000, "variable_costs": 39_000, "selling_expenses": 26_000,
-     "general_admin_expenses": 23_000, "operating_profit": 23_200,
-     "non_operating_income": 900, "non_operating_expenses": 1_300,
-     "ordinary_profit": 22_800, "extraordinary_income": 0, "extraordinary_loss": 3_000,
-     "net_profit": 14_000, "source_file": "サンプルデータ"},
-
-    {"fiscal_year": "2024年3月期", "period_start": "2023-04-01", "period_end": "2024-03-31",
-     "sales": 335_000, "cost_of_goods": 194_300, "gross_profit": 140_700,
-     "fixed_costs": 49_000, "variable_costs": 43_000, "selling_expenses": 28_000,
-     "general_admin_expenses": 24_000, "operating_profit": 39_700,
-     "non_operating_income": 1_100, "non_operating_expenses": 1_000,
-     "ordinary_profit": 39_800, "extraordinary_income": 2_000, "extraordinary_loss": 500,
-     "net_profit": 28_000, "source_file": "サンプルデータ"},
-
-    {"fiscal_year": "2025年3月期", "period_start": "2024-04-01", "period_end": "2025-03-31",
-     "sales": 358_000, "cost_of_goods": 201_000, "gross_profit": 157_000,
-     "fixed_costs": 50_000, "variable_costs": 46_000, "selling_expenses": 29_000,
-     "general_admin_expenses": 25_000, "operating_profit": 53_000,
-     "non_operating_income": 1_200, "non_operating_expenses": 900,
-     "ordinary_profit": 53_300, "extraordinary_income": 0, "extraordinary_loss": 1_000,
-     "net_profit": 37_000, "source_file": "サンプルデータ"},
-]
-
-
 def insert_sample_data(db) -> None:
     cur = db.conn.execute("SELECT COUNT(*) FROM agencies")
     if cur.fetchone()[0] > 0:
@@ -114,6 +63,3 @@ def insert_sample_data(db) -> None:
         sales_rows,
     )
     db.conn.commit()
-
-    for fs in FINANCIAL:
-        db.add_financial_statement(fs)

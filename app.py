@@ -55,6 +55,7 @@ def get_db() -> Database:
     insert_sample_data(db)
     insert_initial_sales_data(db)
     insert_initial_financial_data(db)
+    db.delete_financial_statements_by_source("サンプルデータ")
     return db
 
 
