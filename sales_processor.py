@@ -113,7 +113,8 @@ def process_sales_report_pdf(pdf_path: str, api_key: str,
         # ファイル名から自動判定できなければ両方試みる
         prompt = PRODUCT_REPORT_PROMPT
 
-    uploaded = genai.upload_file(pdf_path, mime_type="application/pdf")
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
 
     # 担当者別商品別売上実績表は数百行に及ぶことがあるため、
     # 出力トークン上限を引き上げ、JSON形式での出力を強制する
@@ -124,7 +125,10 @@ def process_sales_report_pdf(pdf_path: str, api_key: str,
             "max_output_tokens": 65536,
         },
     )
-    response = model.generate_content([uploaded, prompt])
+    response = model.generate_content([
+        {"mime_type": "application/pdf", "data": pdf_bytes},
+        prompt,
+    ])
 
     try:
         response_text = response.text

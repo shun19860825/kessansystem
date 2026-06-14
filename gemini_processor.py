@@ -54,7 +54,9 @@ def process_pdf_with_gemini(pdf_path: str, api_key: str) -> dict:
     import google.generativeai as genai
 
     genai.configure(api_key=api_key)
-    uploaded = genai.upload_file(pdf_path, mime_type="application/pdf")
+
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
 
     model = genai.GenerativeModel(
         "gemini-2.5-flash",
@@ -63,7 +65,10 @@ def process_pdf_with_gemini(pdf_path: str, api_key: str) -> dict:
             "max_output_tokens": 65536,
         },
     )
-    response = model.generate_content([uploaded, EXTRACTION_PROMPT])
+    response = model.generate_content([
+        {"mime_type": "application/pdf", "data": pdf_bytes},
+        EXTRACTION_PROMPT,
+    ])
 
     text = response.text.strip()
     m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
