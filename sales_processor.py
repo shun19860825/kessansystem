@@ -115,14 +115,31 @@ def process_sales_report_pdf(pdf_path: str, api_key: str,
 
     uploaded = genai.upload_file(pdf_path, mime_type="application/pdf")
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    # 担当者別商品別売上実績表は数百行に及ぶことがあるため、
+    # 出力トークン上限を引き上げ、JSON形式での出力を強制する
+    model = genai.GenerativeModel(
+        "gemini-2.5-flash",
+        generation_config={
+            "response_mime_type": "application/json",
+            "max_output_tokens": 65536,
+        },
+    )
     response = model.generate_content([uploaded, prompt])
 
     try:
-        data = _parse_json_response(response.text)
+        response_text = response.text
+    except ValueError as e:
+        finish_reason = ""
+        if response.candidates:
+            finish_reason = str(response.candidates[0].finish_reason)
+        raise ValueError(f"Gemini から有効な応答が得られませんでした"
+                         f"（finish_reason={finish_reason}）: {e}")
+
+    try:
+        data = _parse_json_response(response_text)
     except json.JSONDecodeError as e:
         raise ValueError(f"Gemini のレスポンスを JSON に変換できませんでした: {e}\n"
-                         f"レスポンス先頭: {response.text[:300]}")
+                         f"レスポンス先頭: {response_text[:300]}")
 
     # rows が存在しない場合は空配列を設定
     data.setdefault("rows", [])

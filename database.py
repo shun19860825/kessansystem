@@ -63,6 +63,9 @@ class Database:
                 extraordinary_income   REAL DEFAULT 0,
                 extraordinary_loss     REAL DEFAULT 0,
                 net_profit             REAL DEFAULT 0,
+                total_assets           REAL DEFAULT 0,
+                total_liabilities      REAL DEFAULT 0,
+                net_assets             REAL DEFAULT 0,
                 source_file            TEXT,
                 notes                  TEXT,
                 created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -110,6 +113,16 @@ class Database:
                 gross_profit_rate REAL DEFAULT 0
             )
         """)
+        self.conn.commit()
+
+        # 既存DBへのカラム追加（マイグレーション）
+        existing_cols = {row["name"] for row in
+                          self.conn.execute("PRAGMA table_info(financial_statements)")}
+        for col in ("total_assets", "total_liabilities", "net_assets"):
+            if col not in existing_cols:
+                self.conn.execute(
+                    f"ALTER TABLE financial_statements ADD COLUMN {col} REAL DEFAULT 0"
+                )
         self.conn.commit()
 
     # ── pdf product summary ───────────────────────────────────────────────────
@@ -236,8 +249,9 @@ class Database:
                 selling_expenses, general_admin_expenses,
                 operating_profit, non_operating_income, non_operating_expenses,
                 ordinary_profit, extraordinary_income, extraordinary_loss,
-                net_profit, source_file, notes
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                net_profit, total_assets, total_liabilities, net_assets,
+                source_file, notes
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data.get("fiscal_year"), data.get("period_start"), data.get("period_end"),
             data.get("sales", 0) or 0, data.get("cost_of_goods", 0) or 0,
@@ -247,15 +261,24 @@ class Database:
             data.get("operating_profit", 0) or 0, data.get("non_operating_income", 0) or 0,
             data.get("non_operating_expenses", 0) or 0, data.get("ordinary_profit", 0) or 0,
             data.get("extraordinary_income", 0) or 0, data.get("extraordinary_loss", 0) or 0,
-            data.get("net_profit", 0) or 0, data.get("source_file"), data.get("notes"),
+            data.get("net_profit", 0) or 0,
+            data.get("total_assets", 0) or 0, data.get("total_liabilities", 0) or 0,
+            data.get("net_assets", 0) or 0,
+            data.get("source_file"), data.get("notes"),
         ))
         self.conn.commit()
         return cur.lastrowid
 
     def get_all_financial_statements(self) -> list:
         return self.conn.execute(
-            "SELECT * FROM financial_statements ORDER BY fiscal_year"
+            "SELECT * FROM financial_statements ORDER BY period_end, fiscal_year"
         ).fetchall()
+
+    def financial_statement_exists(self, fiscal_year: str) -> bool:
+        cur = self.conn.execute(
+            "SELECT 1 FROM financial_statements WHERE fiscal_year=?", (fiscal_year,)
+        )
+        return cur.fetchone() is not None
 
     def delete_financial_statement(self, stmt_id: int) -> None:
         self.conn.execute("DELETE FROM financial_statements WHERE id=?", (stmt_id,))

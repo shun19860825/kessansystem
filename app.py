@@ -20,6 +20,7 @@ from gemini_processor import process_pdf_with_gemini, validate_api_key
 from sales_processor import detect_report_type, process_sales_report_pdf
 from utils.sample_data import insert_sample_data
 from utils.initial_sales_data import insert_initial_sales_data
+from utils.initial_financial_data import insert_initial_financial_data
 
 # ── ページ設定（必ず最初の st 呼び出し） ─────────────────────────────────────
 st.set_page_config(
@@ -53,6 +54,7 @@ def get_db() -> Database:
     db.initialize()
     insert_sample_data(db)
     insert_initial_sales_data(db)
+    insert_initial_financial_data(db)
     return db
 
 
@@ -75,17 +77,17 @@ with st.sidebar:
         type="password",
         placeholder="AIzaSy...",
         help="Google AI Studio（aistudio.google.com）でAPIキーを取得してください",
-    )
+    ).strip()
     st.session_state["api_key"] = api_key
 
     if api_key:
         if st.button("🔌 接続テスト"):
             with st.spinner("確認中..."):
-                ok = validate_api_key(api_key)
+                ok, err = validate_api_key(api_key)
             if ok:
                 st.success("接続成功！")
             else:
-                st.error("接続失敗。キーを確認してください")
+                st.error(f"接続失敗: {err}")
 
     st.divider()
     st.caption("**データ管理**")
@@ -603,27 +605,66 @@ with tab4:
                 )
                 st.plotly_chart(fig3, use_container_width=True)
 
+            # ─── 貸借対照表 ───────────────────────────────────────────────────
+            st.markdown("**貸借対照表**")
+            bs_rows = []
+            for lbl, key in [
+                ("資産の部合計",   "total_assets"),
+                ("負債の部合計",   "total_liabilities"),
+                ("純資産の部合計", "net_assets"),
+            ]:
+                row = {"指標": lbl}
+                for s in filtered:
+                    row[s["fiscal_year"]] = f"¥{v(s, key):,.0f}万"
+                bs_rows.append(row)
+            st.dataframe(
+                pd.DataFrame(bs_rows), use_container_width=True, hide_index=True
+            )
+
             # ─── 数値比較表 ───────────────────────────────────────────────────
             st.markdown("**数値比較表**")
+
+            def pretax(s) -> float:
+                """税引前当期純利益 = 経常利益 + 特別利益 - 特別損失"""
+                return (float(s["ordinary_profit"] or 0)
+                        + float(s["extraordinary_income"] or 0)
+                        - float(s["extraordinary_loss"] or 0))
+
             cmp_rows = []
             for lbl, key in [
-                ("売上高",    "sales"),
-                ("売上原価",  "cost_of_goods"),
-                ("粗利",      "gross_profit"),
-                ("固定費",    "fixed_costs"),
-                ("変動費",    "variable_costs"),
-                ("販売費",    "selling_expenses"),
-                ("一般管理費","general_admin_expenses"),
-                ("営業利益",  "operating_profit"),
-                ("経常利益",  "ordinary_profit"),
-                ("純利益",    "net_profit"),
+                ("売上高",   "sales"),
+                ("売上原価", "cost_of_goods"),
+                ("営業利益", "operating_profit"),
+                ("経常利益", "ordinary_profit"),
             ]:
                 row = {"指標": lbl}
                 for s in filtered:
                     row[s["fiscal_year"]] = f"¥{v(s, key):,.0f}万"
                 cmp_rows.append(row)
 
-            # 利益率行
+            row = {"指標": "税引前当期純利益"}
+            for s in filtered:
+                row[s["fiscal_year"]] = f"¥{pretax(s)/10_000:,.0f}万"
+            cmp_rows.append(row)
+
+            row = {"指標": "当期純利益"}
+            for s in filtered:
+                row[s["fiscal_year"]] = f"¥{v(s, 'net_profit'):,.0f}万"
+            cmp_rows.append(row)
+
+            # ─── 内訳・利益率（参考） ───────────────────────────────────────────
+            for lbl, key in [
+                ("粗利",       "gross_profit"),
+                ("固定費",     "fixed_costs"),
+                ("変動費",     "variable_costs"),
+                ("販売費",     "selling_expenses"),
+                ("一般管理費", "general_admin_expenses"),
+            ]:
+                row = {"指標": lbl}
+                for s in filtered:
+                    row[s["fiscal_year"]] = f"¥{v(s, key):,.0f}万"
+                cmp_rows.append(row)
+
             for lbl, num_key in [
                 ("粗利率",     "gross_profit"),
                 ("営業利益率", "operating_profit"),
