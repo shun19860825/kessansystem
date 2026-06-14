@@ -682,6 +682,88 @@ with tab4:
                 pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True
             )
 
+    # ─── 出力 ─────────────────────────────────────────────────────────────────
+    if stmts:
+        st.divider()
+        st.markdown("### 📤 決算書データの出力")
+
+        def _rate(s, key):
+            d = float(s["sales"] or 0)
+            n = float(s[key] or 0)
+            return round(n / d * 100, 1) if d else None
+
+        def _pretax(s):
+            return (float(s["ordinary_profit"] or 0)
+                    + float(s["extraordinary_income"] or 0)
+                    - float(s["extraordinary_loss"] or 0))
+
+        EXPORT_ITEMS = [
+            ("自",                  lambda s: s["period_start"] or ""),
+            ("至",                  lambda s: s["period_end"] or ""),
+            ("売上高",              lambda s: float(s["sales"] or 0)),
+            ("売上原価",            lambda s: float(s["cost_of_goods"] or 0)),
+            ("売上総利益（粗利）",   lambda s: float(s["gross_profit"] or 0)),
+            ("固定費",              lambda s: float(s["fixed_costs"] or 0)),
+            ("変動費",              lambda s: float(s["variable_costs"] or 0)),
+            ("販売費",              lambda s: float(s["selling_expenses"] or 0)),
+            ("一般管理費",          lambda s: float(s["general_admin_expenses"] or 0)),
+            ("営業利益",            lambda s: float(s["operating_profit"] or 0)),
+            ("営業外収益",          lambda s: float(s["non_operating_income"] or 0)),
+            ("営業外費用",          lambda s: float(s["non_operating_expenses"] or 0)),
+            ("経常利益",            lambda s: float(s["ordinary_profit"] or 0)),
+            ("特別利益",            lambda s: float(s["extraordinary_income"] or 0)),
+            ("特別損失",            lambda s: float(s["extraordinary_loss"] or 0)),
+            ("税引前当期純利益",     _pretax),
+            ("当期純利益",          lambda s: float(s["net_profit"] or 0)),
+            ("資産の部合計",        lambda s: float(s["total_assets"] or 0)),
+            ("負債の部合計",        lambda s: float(s["total_liabilities"] or 0)),
+            ("純資産の部合計",      lambda s: float(s["net_assets"] or 0)),
+            ("粗利率(%)",           lambda s: _rate(s, "gross_profit")),
+            ("営業利益率(%)",       lambda s: _rate(s, "operating_profit")),
+            ("経常利益率(%)",       lambda s: _rate(s, "ordinary_profit")),
+            ("純利益率(%)",         lambda s: _rate(s, "net_profit")),
+            ("取込元",              lambda s: s["source_file"] or ""),
+        ]
+        fn_map = dict(EXPORT_ITEMS)
+
+        default_items = [
+            "売上高", "売上原価", "売上総利益（粗利）",
+            "営業利益", "経常利益", "当期純利益",
+            "資産の部合計", "負債の部合計", "純資産の部合計",
+        ]
+        selected_items = st.multiselect(
+            "出力する科目を選択",
+            options=[lbl for lbl, _ in EXPORT_ITEMS],
+            default=default_items,
+            key="export_items",
+        )
+
+        export_targets = [s for s in stmts if s["fiscal_year"] in selected_years] \
+                         if selected_years else stmts
+
+        if not export_targets:
+            st.info("左側で出力する決算期を選択してください")
+        elif not selected_items:
+            st.info("出力する科目を選択してください")
+        else:
+            export_rows = []
+            for s in export_targets:
+                row = {"決算期": s["fiscal_year"]}
+                for lbl in selected_items:
+                    row[lbl] = fn_map[lbl](s)
+                export_rows.append(row)
+
+            df_export = pd.DataFrame(export_rows)
+            st.dataframe(df_export, use_container_width=True, hide_index=True)
+
+            csv_bytes = df_export.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "📥 CSVダウンロード",
+                data=csv_bytes,
+                file_name="決算書データ.csv",
+                mime="text/csv",
+            )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 5 ── 担当者別売上実績
