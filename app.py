@@ -629,17 +629,22 @@ with tab4:
 
             # ─── 経営指標（比率・効率性） ─────────────────────────────────────
             st.markdown("**経営指標（比率・効率性）**")
+            def _fixed_assets(s) -> float:
+                """固定資産 = 総資産 − 流動資産（流動資産取込済みの場合のみ有効）"""
+                return float(s["total_assets"] or 0) - float(s["current_assets"] or 0)
+
             _ratio_defs = {
-                "固定費比率(%)":   lambda s: float(s["fixed_costs"] or 0) / float(s["sales"]) * 100 if s["sales"] else None,
-                "自己資本比率(%)": lambda s: float(s["net_assets"] or 0) / float(s["total_assets"]) * 100 if s["total_assets"] else None,
-                "流動比率(%)":     lambda s: float(s["current_assets"] or 0) / float(s["current_liabilities"]) * 100 if (s["current_liabilities"] or 0) else None,
-                "労働分配率(%)":   lambda s: float(s["labor_cost"] or 0) / float(s["gross_profit"]) * 100 if (s["labor_cost"] or 0) and (s["gross_profit"] or 0) else None,
-                "在庫回転率(回)":  lambda s: float(s["cost_of_goods"] or 0) / float(s["inventory"]) if (s["inventory"] or 0) else None,
+                "固定費比率(%)":    lambda s: _fixed_assets(s) / float(s["net_assets"]) * 100 if (s["net_assets"] and (s["current_assets"] or 0) > 0) else None,
+                "売上高固定費率(%)": lambda s: float(s["fixed_costs"] or 0) / float(s["sales"]) * 100 if s["sales"] else None,
+                "自己資本比率(%)":  lambda s: float(s["net_assets"] or 0) / float(s["total_assets"]) * 100 if s["total_assets"] else None,
+                "流動比率(%)":      lambda s: float(s["current_assets"] or 0) / float(s["current_liabilities"]) * 100 if (s["current_liabilities"] or 0) else None,
+                "労働分配率(%)":    lambda s: float(s["labor_cost"] or 0) / float(s["gross_profit"]) * 100 if (s["labor_cost"] or 0) and (s["gross_profit"] or 0) else None,
+                "在庫回転率(回)":   lambda s: float(s["cost_of_goods"] or 0) / float(s["inventory"]) if (s["inventory"] or 0) else None,
             }
             visible_ratio = st.multiselect(
                 "表示する経営指標",
                 options=list(_ratio_defs),
-                default=["固定費比率(%)", "自己資本比率(%)"],
+                default=["固定費比率(%)", "売上高固定費率(%)", "自己資本比率(%)"],
                 key="ratio_metrics_sel",
             )
             if visible_ratio:
@@ -728,7 +733,8 @@ with tab4:
                 _str_row("粗利率",             lambda s: _pct_or_dash(float(s["gross_profit"] or 0), float(s["sales"] or 0))),
                 _str_row("営業利益率",         lambda s: _pct_or_dash(float(s["operating_profit"] or 0), float(s["sales"] or 0))),
                 _str_row("経常利益率",         lambda s: _pct_or_dash(float(s["ordinary_profit"] or 0), float(s["sales"] or 0))),
-                _str_row("固定費比率",         lambda s: _pct_or_dash(float(s["fixed_costs"] or 0), float(s["sales"] or 0))),
+                _str_row("固定費比率",         lambda s: _pct_or_dash(_fixed_assets(s), float(s["net_assets"] or 0)) if (s["current_assets"] or 0) else "—"),
+                _str_row("売上高固定費率",     lambda s: _pct_or_dash(float(s["fixed_costs"] or 0), float(s["sales"] or 0))),
                 _yen_row("損益分岐点売上",      _bep),
                 # ── 安全性・効率性指標 ────────────────────────────────────────
                 _str_row("自己資本比率",       lambda s: _pct_or_dash(float(s["net_assets"] or 0), float(s["total_assets"] or 0))),
