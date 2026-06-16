@@ -466,6 +466,9 @@ with tab4:
                 if target:
                     db.delete_financial_statement(target["id"])
                     st.success(f"削除: {del_year}")
+                    # 右側の選択状態からも除去してから再描画
+                    cur_sel = st.session_state.get("fin_years", all_years)
+                    st.session_state["fin_years"] = [y for y in cur_sel if y != del_year]
                     st.cache_resource.clear()
                     st.rerun()
         else:
@@ -490,8 +493,20 @@ with tab4:
                             tmp_path = tmp.name
                         try:
                             data = process_pdf_with_gemini(tmp_path, cur_key)
+                            fiscal_year = data.get("fiscal_year", "")
+                            # 同じ決算期が既存の場合は上書き（重複防止）
+                            if fiscal_year and db.financial_statement_exists(fiscal_year):
+                                existing = next(
+                                    (s for s in db.get_all_financial_statements()
+                                     if s["fiscal_year"] == fiscal_year), None
+                                )
+                                if existing:
+                                    db.delete_financial_statement(existing["id"])
+                                msg = f"✅ 更新完了: {fiscal_year}"
+                            else:
+                                msg = f"✅ 取り込み完了: {fiscal_year or uploaded_pdf.name}"
                             db.add_financial_statement(data)
-                            st.success(f"✅ 取り込み完了: {data.get('fiscal_year', uploaded_pdf.name)}")
+                            st.success(msg)
                             st.cache_resource.clear()
                             st.rerun()
                         except Exception as e:
