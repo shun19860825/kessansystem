@@ -519,28 +519,49 @@ with tab4:
             def v(s, key) -> float:
                 return float(s[key] or 0) / 10_000
 
+            def _bep(s) -> float:
+                """損益分岐点売上（万円）= 固定費 / 限界利益率"""
+                s_val = float(s["sales"] or 0)
+                if not s_val:
+                    return 0.0
+                marginal = s_val - float(s["cost_of_goods"] or 0) - float(s["variable_costs"] or 0)
+                rate_val = marginal / s_val
+                return float(s["fixed_costs"] or 0) / rate_val / 10_000 if rate_val > 0 else 0.0
+
+            def _pct_or_dash(num: float, den: float, decimals: int = 1) -> str:
+                return f"{num / den * 100:.{decimals}f}%" if den else "—"
+
             # ─── 主要指標比較（棒） ───────────────────────────────────────────
             if chart_mode == "主要指標比較（棒）":
-                metrics = [
-                    ("売上高",   "sales"),
-                    ("粗利",     "gross_profit"),
-                    ("営業利益", "operating_profit"),
-                    ("経常利益", "ordinary_profit"),
-                    ("純利益",   "net_profit"),
-                ]
-                rows_list = [
-                    {"指標": lbl, "決算期": s["fiscal_year"], "金額（万円）": v(s, key)}
-                    for lbl, key in metrics for s in filtered
-                ]
-                fig = px.bar(
-                    pd.DataFrame(rows_list),
-                    x="決算期", y="金額（万円）", color="指標",
-                    barmode="group", title="主要指標 年度別比較",
-                    color_discrete_sequence=px.colors.qualitative.Plotly,
+                all_bar_metrics = {
+                    "売上高":        lambda s: v(s, "sales"),
+                    "粗利":          lambda s: v(s, "gross_profit"),
+                    "損益分岐点売上": _bep,
+                    "営業利益":      lambda s: v(s, "operating_profit"),
+                    "経常利益":      lambda s: v(s, "ordinary_profit"),
+                    "純利益":        lambda s: v(s, "net_profit"),
+                }
+                visible_bar = st.multiselect(
+                    "表示する指標",
+                    options=list(all_bar_metrics),
+                    default=["売上高", "粗利", "営業利益", "経常利益", "純利益"],
+                    key="bar_metrics_sel",
                 )
-                fig.update_yaxes(tickformat=",.0f")
-                fig.update_layout(margin=dict(t=50))
-                st.plotly_chart(fig, use_container_width=True)
+                if visible_bar:
+                    rows_list = [
+                        {"指標": lbl, "決算期": s["fiscal_year"],
+                         "金額（万円）": all_bar_metrics[lbl](s)}
+                        for lbl in visible_bar for s in filtered
+                    ]
+                    fig = px.bar(
+                        pd.DataFrame(rows_list),
+                        x="決算期", y="金額（万円）", color="指標",
+                        barmode="group", title="主要指標 年度別比較",
+                        color_discrete_sequence=px.colors.qualitative.Plotly,
+                    )
+                    fig.update_yaxes(tickformat=",.0f")
+                    fig.update_layout(margin=dict(t=50))
+                    st.plotly_chart(fig, use_container_width=True)
 
             # ─── 費用構造（積み上げ） ─────────────────────────────────────────
             elif chart_mode == "費用構造（積み上げ）":
@@ -606,6 +627,48 @@ with tab4:
                 )
                 st.plotly_chart(fig3, use_container_width=True)
 
+            # ─── 経営指標（比率・効率性） ─────────────────────────────────────
+            st.markdown("**経営指標（比率・効率性）**")
+            _ratio_defs = {
+                "固定費比率(%)":   lambda s: float(s["fixed_costs"] or 0) / float(s["sales"]) * 100 if s["sales"] else None,
+                "自己資本比率(%)": lambda s: float(s["net_assets"] or 0) / float(s["total_assets"]) * 100 if s["total_assets"] else None,
+                "流動比率(%)":     lambda s: float(s["current_assets"] or 0) / float(s["current_liabilities"]) * 100 if (s["current_liabilities"] or 0) else None,
+                "労働分配率(%)":   lambda s: float(s["labor_cost"] or 0) / float(s["gross_profit"]) * 100 if (s["labor_cost"] or 0) and (s["gross_profit"] or 0) else None,
+                "在庫回転率(回)":  lambda s: float(s["cost_of_goods"] or 0) / float(s["inventory"]) if (s["inventory"] or 0) else None,
+            }
+            visible_ratio = st.multiselect(
+                "表示する経営指標",
+                options=list(_ratio_defs),
+                default=["固定費比率(%)", "自己資本比率(%)"],
+                key="ratio_metrics_sel",
+            )
+            if visible_ratio:
+                ratio_rows = {"決算期": years}
+                for lbl in visible_ratio:
+                    vals = []
+                    for s in filtered:
+                        try:
+                            vals.append(_ratio_defs[lbl](s))
+                        except Exception:
+                            vals.append(None)
+                    ratio_rows[lbl] = vals
+                df_ratio = pd.DataFrame(ratio_rows)
+                has_data = df_ratio[visible_ratio].notna().any().any()
+                if has_data:
+                    fig_r = px.line(
+                        df_ratio.melt(id_vars="決算期", var_name="指標", value_name="値"),
+                        x="決算期", y="値", color="指標",
+                        markers=True, title="経営指標 推移",
+                        color_discrete_sequence=px.colors.qualitative.Plotly,
+                    )
+                    fig_r.update_layout(
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                        margin=dict(t=60),
+                    )
+                    st.plotly_chart(fig_r, use_container_width=True)
+                else:
+                    st.info("流動比率・労働分配率・在庫回転率は決算書PDFを再取り込みすると表示されます")
+
             # ─── 貸借対照表 ───────────────────────────────────────────────────
             st.markdown("**貸借対照表**")
             bs_rows = []
@@ -626,58 +689,53 @@ with tab4:
             st.markdown("**数値比較表**")
 
             def pretax(s) -> float:
-                """税引前当期純利益 = 経常利益 + 特別利益 - 特別損失"""
                 return (float(s["ordinary_profit"] or 0)
                         + float(s["extraordinary_income"] or 0)
                         - float(s["extraordinary_loss"] or 0))
 
-            cmp_rows = []
-            for lbl, key in [
-                ("売上高",   "sales"),
-                ("売上原価", "cost_of_goods"),
-                ("営業利益", "operating_profit"),
-                ("経常利益", "ordinary_profit"),
-            ]:
+            def _yen_row(lbl, fn):
                 row = {"指標": lbl}
                 for s in filtered:
-                    row[s["fiscal_year"]] = f"¥{v(s, key):,.0f}万"
-                cmp_rows.append(row)
+                    row[s["fiscal_year"]] = f"¥{fn(s):,.0f}万"
+                return row
 
-            row = {"指標": "税引前当期純利益"}
-            for s in filtered:
-                row[s["fiscal_year"]] = f"¥{pretax(s)/10_000:,.0f}万"
-            cmp_rows.append(row)
-
-            row = {"指標": "当期純利益"}
-            for s in filtered:
-                row[s["fiscal_year"]] = f"¥{v(s, 'net_profit'):,.0f}万"
-            cmp_rows.append(row)
-
-            # ─── 内訳・利益率（参考） ───────────────────────────────────────────
-            for lbl, key in [
-                ("粗利",       "gross_profit"),
-                ("固定費",     "fixed_costs"),
-                ("変動費",     "variable_costs"),
-                ("販売費",     "selling_expenses"),
-                ("一般管理費", "general_admin_expenses"),
-            ]:
+            def _str_row(lbl, fn):
                 row = {"指標": lbl}
                 for s in filtered:
-                    row[s["fiscal_year"]] = f"¥{v(s, key):,.0f}万"
-                cmp_rows.append(row)
+                    try:
+                        row[s["fiscal_year"]] = fn(s)
+                    except Exception:
+                        row[s["fiscal_year"]] = "—"
+                return row
 
-            for lbl, num_key in [
-                ("粗利率",     "gross_profit"),
-                ("営業利益率", "operating_profit"),
-                ("経常利益率", "ordinary_profit"),
-            ]:
-                row = {"指標": lbl}
-                for s in filtered:
-                    d = float(s["sales"] or 0)
-                    n = float(s[num_key] or 0)
-                    row[s["fiscal_year"]] = f"{n/d*100:.1f}%" if d else "—"
-                cmp_rows.append(row)
-
+            cmp_rows = [
+                # ── 損益計算書 ────────────────────────────────────────────────
+                _yen_row("売上高",             lambda s: v(s, "sales")),
+                _yen_row("売上原価",           lambda s: v(s, "cost_of_goods")),
+                _yen_row("売上総利益（粗利）",  lambda s: v(s, "gross_profit")),
+                _yen_row("販管費",             lambda s: v(s, "selling_expenses") + v(s, "general_admin_expenses")),
+                _yen_row("　うち固定費",        lambda s: v(s, "fixed_costs")),
+                _yen_row("　うち変動費",        lambda s: v(s, "variable_costs")),
+                _yen_row("営業利益",           lambda s: v(s, "operating_profit")),
+                _yen_row("営業外収益",         lambda s: v(s, "non_operating_income")),
+                _yen_row("営業外費用",         lambda s: v(s, "non_operating_expenses")),
+                _yen_row("経常利益",           lambda s: v(s, "ordinary_profit")),
+                _yen_row("特別利益",           lambda s: v(s, "extraordinary_income")),
+                _yen_row("特別損失",           lambda s: v(s, "extraordinary_loss")),
+                _yen_row("税引前当期純利益",    lambda s: pretax(s) / 10_000),
+                _yen_row("当期純利益",         lambda s: v(s, "net_profit")),
+                # ── 収益性指標 ────────────────────────────────────────────────
+                _str_row("粗利率",             lambda s: _pct_or_dash(float(s["gross_profit"] or 0), float(s["sales"] or 0))),
+                _str_row("営業利益率",         lambda s: _pct_or_dash(float(s["operating_profit"] or 0), float(s["sales"] or 0))),
+                _str_row("経常利益率",         lambda s: _pct_or_dash(float(s["ordinary_profit"] or 0), float(s["sales"] or 0))),
+                _str_row("固定費比率",         lambda s: _pct_or_dash(float(s["fixed_costs"] or 0), float(s["sales"] or 0))),
+                _yen_row("損益分岐点売上",      _bep),
+                # ── 安全性・効率性指標 ────────────────────────────────────────
+                _str_row("自己資本比率",       lambda s: _pct_or_dash(float(s["net_assets"] or 0), float(s["total_assets"] or 0))),
+                _str_row("流動比率",           lambda s: _pct_or_dash(float(s["current_assets"] or 0), float(s["current_liabilities"] or 0)) if (s["current_liabilities"] or 0) else "—"),
+                _str_row("労働分配率",         lambda s: _pct_or_dash(float(s["labor_cost"] or 0), float(s["gross_profit"] or 0)) if (s["labor_cost"] or 0) else "—"),
+                _str_row("在庫回転率",         lambda s: f"{float(s['cost_of_goods'] or 0) / float(s['inventory']):.1f}回" if (s["inventory"] or 0) else "—"),
+            ]
             st.dataframe(
                 pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True
             )

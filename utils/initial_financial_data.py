@@ -39,6 +39,11 @@ TOKYO_BLIND_FY2025 = {
     "extraordinary_loss": 3_481_817,
     "net_profit": 9_568_725,
 
+    "current_assets": 0,
+    "current_liabilities": 0,
+    "inventory": 0,
+    "labor_cost": 0,
+
     "source_file": "東京ブラインド　決算書2025.07　　20250928.pdf",
     "notes": "第72期",
 }

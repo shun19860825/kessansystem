@@ -35,6 +35,10 @@ EXTRACTION_PROMPT = """
   "sga_meeting_cost": "販売費及び一般管理費内訳書の「会議費」",
   "sga_entertainment_cost": "販売費及び一般管理費内訳書の「交際費」",
   "sga_commission_fee": "販売費及び一般管理費内訳書の「支払手数料」",
+  "labor_cost": "販売費及び一般管理費内訳書の給与・賞与・役員報酬・法定福利費などの人件費合計（該当項目を合算。見つからない場合は0）",
+  "current_assets": "貸借対照表 流動資産合計",
+  "current_liabilities": "貸借対照表 流動負債合計",
+  "inventory": "貸借対照表 棚卸資産合計（商品・製品・仕掛品・原材料などの合計。見つからない場合は0）",
 
   "operating_profit": "損益計算書 営業利益金額",
   "non_operating_income": "損益計算書 営業外収益合計",
