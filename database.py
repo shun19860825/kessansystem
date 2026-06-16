@@ -70,6 +70,8 @@ class Database:
                 current_liabilities    REAL DEFAULT 0,
                 inventory              REAL DEFAULT 0,
                 labor_cost             REAL DEFAULT 0,
+                total_fixed_costs      REAL DEFAULT 0,
+                marginal_profit        REAL DEFAULT 0,
                 source_file            TEXT,
                 notes                  TEXT,
                 created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -123,7 +125,8 @@ class Database:
         existing_cols = {row["name"] for row in
                           self.conn.execute("PRAGMA table_info(financial_statements)")}
         for col in ("total_assets", "total_liabilities", "net_assets",
-                    "current_assets", "current_liabilities", "inventory", "labor_cost"):
+                    "current_assets", "current_liabilities", "inventory", "labor_cost",
+                    "total_fixed_costs", "marginal_profit"):
             if col not in existing_cols:
                 self.conn.execute(
                     f"ALTER TABLE financial_statements ADD COLUMN {col} REAL DEFAULT 0"
@@ -256,8 +259,9 @@ class Database:
                 ordinary_profit, extraordinary_income, extraordinary_loss,
                 net_profit, total_assets, total_liabilities, net_assets,
                 current_assets, current_liabilities, inventory, labor_cost,
+                total_fixed_costs, marginal_profit,
                 source_file, notes
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data.get("fiscal_year"), data.get("period_start"), data.get("period_end"),
             data.get("sales", 0) or 0, data.get("cost_of_goods", 0) or 0,
@@ -272,6 +276,7 @@ class Database:
             data.get("net_assets", 0) or 0,
             data.get("current_assets", 0) or 0, data.get("current_liabilities", 0) or 0,
             data.get("inventory", 0) or 0, data.get("labor_cost", 0) or 0,
+            data.get("total_fixed_costs", 0) or 0, data.get("marginal_profit", 0) or 0,
             data.get("source_file"), data.get("notes"),
         ))
         self.conn.commit()

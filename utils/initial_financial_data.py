@@ -39,10 +39,15 @@ TOKYO_BLIND_FY2025 = {
     "extraordinary_loss": 3_481_817,
     "net_profit": 9_568_725,
 
-    "current_assets": 0,
-    "current_liabilities": 0,
-    "inventory": 0,
-    "labor_cost": 0,
+    # 貸借対照表（流動）
+    "current_assets": 262_570_000,      # 流動資産合計（流動比率527.28%より）
+    "current_liabilities": 49_790_000,  # 流動負債合計（流動比率527.28%より）
+    "inventory": 95_479_139,            # 棚卸資産合計（製品・仕掛品15,111,407 + 原材料80,367,732）
+
+    # CVP分析・固定費（経営財務分析報告書 第72期より）
+    "labor_cost": 76_256_017,           # 人件費総額（工場労務費 + 本社給与・賞与・福利厚生等）
+    "total_fixed_costs": 117_083_913,   # 年間固定費総額（製造固定費 + 販管費固定 + 支払利息）
+    "marginal_profit": 130_589_135,     # 限界利益（付加価値）= 売上高 - 変動費
 
     "source_file": "東京ブラインド　決算書2025.07　　20250928.pdf",
     "notes": "第72期",
