@@ -44,10 +44,15 @@ TOKYO_BLIND_FY2025 = {
     "current_liabilities": 49_790_000,  # 流動負債合計（流動比率527.28%より）
     "inventory": 95_479_139,            # 棚卸資産合計（製品・仕掛品15,111,407 + 原材料80,367,732）
 
-    # CVP分析・固定費（経営財務分析報告書 第72期より）
-    "labor_cost": 76_256_017,           # 人件費総額（工場労務費 + 本社給与・賞与・福利厚生等）
-    "total_fixed_costs": 117_083_913,   # 年間固定費総額（製造固定費 + 販管費固定 + 支払利息）
-    "marginal_profit": 130_589_135,     # 限界利益（付加価値）= 売上高 - 変動費
+    # CVP分析・固定費（財務分析レポート 第72期より）
+    "labor_cost": 76_249_987,           # 人件費総額（工場労務費 + 本社給与・賞与・福利厚生等）
+    "total_fixed_costs": 165_919_849,   # 年間固定費総額（管理会計区分：製造固定費 + 販管固定費）
+    "marginal_profit": 279_024_862,     # 限界利益 = 売上高 303,251,566 - 変動費 24,226,704
+
+    # 財務レバレッジ・キャッシュ関連
+    "cash_deposits": 113_081_870,       # 現金・預金（貸借対照表）
+    "interest_bearing_debt": 258_839_180,  # 有利子負債 = 役員借入金 7,150,180 + 長期借入金 251,689,000
+    "depreciation": 11_693_423,         # 減価償却費合計 = 製造 9,185,204 + 販管 2,508,219
 
     "source_file": "東京ブラインド　決算書2025.07　　20250928.pdf",
     "notes": "第72期",
@@ -55,7 +60,12 @@ TOKYO_BLIND_FY2025 = {
 
 
 def insert_initial_financial_data(db) -> None:
-    """既に同じ決算期のデータが存在しない場合のみ追加する。"""
-    if db.financial_statement_exists(TOKYO_BLIND_FY2025["fiscal_year"]):
+    """初期データを挿入。既存行で新フィールドが未設定の場合は自動的に上書き更新する。"""
+    fy = TOKYO_BLIND_FY2025["fiscal_year"]
+    if not db.financial_statement_exists(fy):
+        db.add_financial_statement(TOKYO_BLIND_FY2025)
         return
-    db.add_financial_statement(TOKYO_BLIND_FY2025)
+    existing = next((s for s in db.get_all_financial_statements() if s["fiscal_year"] == fy), None)
+    if existing and not (existing["cash_deposits"] or existing["interest_bearing_debt"]):
+        db.delete_financial_statement(existing["id"])
+        db.add_financial_statement(TOKYO_BLIND_FY2025)

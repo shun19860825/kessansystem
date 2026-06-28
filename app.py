@@ -772,6 +772,113 @@ with tab4:
                 pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True
             )
 
+    # ─── 総合財務指標分析 ─────────────────────────────────────────────────────
+    if stmts and filtered:
+        st.divider()
+        st.markdown("### 📊 総合財務指標分析")
+
+        yr_sel = st.selectbox(
+            "分析対象期",
+            options=[s["fiscal_year"] for s in filtered],
+            key="fin_anal_yr",
+        )
+        fs = next((s for s in filtered if s["fiscal_year"] == yr_sel), filtered[0])
+
+        def _fv(k):
+            v = fs[k]
+            return float(v) if v else 0.0
+
+        sv   = _fv("sales");          mo = sv / 12 if sv else 0
+        cogs = _fv("cost_of_goods");  gp = _fv("gross_profit")
+        op   = _fv("operating_profit"); ordi = _fv("ordinary_profit"); np_ = _fv("net_profit")
+        ta   = _fv("total_assets");   na = _fv("net_assets")
+        ca   = _fv("current_assets"); cl  = _fv("current_liabilities")
+        inv  = _fv("inventory");      lc  = _fv("labor_cost")
+        tf   = _fv("total_fixed_costs"); mp = _fv("marginal_profit")
+        cd   = _fv("cash_deposits"); ibd = _fv("interest_bearing_debt"); dep = _fv("depreciation")
+
+        def _p(a, b, d=1):
+            return f"{a/b*100:.{d}f}%" if b else "—"
+        def _y(a):
+            return f"¥{a:,.0f}" if a else "—"
+        def _r(n, good, ok, hi=True):
+            if not n: return "—"
+            return ("◎ 良好" if (n >= good if hi else n <= good)
+                    else "○ 普通" if (n >= ok if hi else n <= ok)
+                    else "▲ 要注意")
+
+        mp_rate = mp / sv if sv else 0
+        bep     = tf / mp_rate if mp_rate else 0
+        safety  = (sv - bep) / sv * 100 if sv else 0
+        ebitda  = op + dep
+        nopat   = op * 0.70
+        invested = na + ibd
+
+        def _rows(*items):
+            return pd.DataFrame(items, columns=["指標", "計算式", "値", "判定", "目安・補足"])
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            st.markdown("**① 収益性**")
+            st.dataframe(_rows(
+                ("原価率",     "売上原価 ÷ 売上高",   _p(cogs, sv), _r(cogs/sv*100 if sv else 0, 60, 70, hi=False), "製造業目安：60%未満"),
+                ("粗利率",     "売上総利益 ÷ 売上高", _p(gp,   sv), _r(gp/sv*100   if sv else 0, 35, 20),           "製造業目安：35%以上"),
+                ("営業利益率", "営業利益 ÷ 売上高",   _p(op,   sv), _r(op/sv*100   if sv else 0,  5,  2),           "目安：5%以上が優良"),
+                ("経常利益率", "経常利益 ÷ 売上高",   _p(ordi, sv), _r(ordi/sv*100 if sv else 0,  5,  2),           "目安：5%以上が優良"),
+                ("純利益率",   "当期純利益 ÷ 売上高", _p(np_,  sv), _r(np_/sv*100  if sv else 0,  3,  1),           "目安：3%以上が優良"),
+            ), hide_index=True, use_container_width=True)
+
+            st.markdown("**② 費用構造・CVP分析**")
+            st.dataframe(_rows(
+                ("固定費比率",     "固定費 ÷ 売上高",     _p(tf, sv),        _r(tf/sv*100 if sv else 0, 40, 60, hi=False), "目安：40%未満が望ましい"),
+                ("限界利益率",     "限界利益 ÷ 売上高",   _p(mp, sv),        "",                                             "高いほど良い"),
+                ("損益分岐点売上高","固定費 ÷ 限界利益率", _y(bep),           f"安全余裕率 {safety:.1f}%",                    f"実売上との差 {_y(sv-bep)}"),
+                ("損益分岐点比率", "BEP ÷ 売上高",        _p(bep, sv),       _r(bep/sv*100 if sv else 0, 80, 90, hi=False), "90%未満が中小企業の優良目安"),
+            ), hide_index=True, use_container_width=True)
+
+            st.markdown("**③ 人件費効率**")
+            st.dataframe(_rows(
+                ("人件費率",   "人件費 ÷ 売上高",   _p(lc, sv), _r(lc/sv*100 if sv else 0, 30, 40, hi=False), f"人件費 {_y(lc)}　目安：30%未満"),
+                ("労働分配率", "人件費 ÷ 限界利益", _p(lc, mp), _r(lc/mp*100 if mp else 0, 50, 70, hi=False), "目安：50%未満が望ましい"),
+            ), hide_index=True, use_container_width=True)
+
+        with col_b:
+            st.markdown("**④ 資本収益性**")
+            roic_v = nopat / invested * 100 if invested else 0
+            st.dataframe(_rows(
+                ("ROA（総資産利益率）",   "当期純利益 ÷ 総資産", _p(np_, ta),       _r(np_/ta*100 if ta else 0, 5, 2),    "目安：5%以上"),
+                ("ROE（自己資本利益率）", "当期純利益 ÷ 純資産", _p(np_, na),       _r(np_/na*100 if na else 0, 10, 5),   "目安：10%以上"),
+                ("ROIC（投下資本利益率）","NOPAT ÷ 投下資本",    f"{roic_v:.1f}%" if invested else "—",
+                 _r(roic_v, 8, 4) if invested else "—", f"NOPAT={_y(nopat)}　目安：8%以上"),
+            ), hide_index=True, use_container_width=True)
+
+            st.markdown("**⑤ 資産効率**")
+            inv_t = cogs / inv if inv else 0
+            cash_m = cd / mo if mo else 0
+            st.dataframe(_rows(
+                ("在庫回転率",     "売上原価 ÷ 棚卸資産", f"{inv_t:.2f}回" if inv else "—",
+                 _r(inv_t, 3, 1) if inv else "—", "製造業目安：3回以上"),
+                ("現預金月商倍率", "現預金 ÷ 月商",       f"{cash_m:.1f}ヶ月" if cd else "—",
+                 _r(cash_m, 3, 2) if cd else "—", f"現預金 {_y(cd)}　目安：2ヶ月以上"),
+            ), hide_index=True, use_container_width=True)
+
+            st.markdown("**⑥ 安全性・財務レバレッジ**")
+            de_v   = ibd / na if na else 0
+            ibd_m  = ibd / mo if mo else 0
+            ibd_yr = ibd / ebitda if ebitda else 0
+            st.dataframe(_rows(
+                ("自己資本比率",       "純資産 ÷ 総資産",        _p(na, ta),               _r(na/ta*100 if ta else 0, 40, 20),         "目安：40%以上が安定"),
+                ("流動比率",           "流動資産 ÷ 流動負債",    _p(ca, cl),               _r(ca/cl*100 if cl else 0, 200, 100),        "目安：200%以上が安全"),
+                ("D/Eレシオ",          "有利子負債 ÷ 自己資本",  f"{de_v:.2f}倍" if ibd else "—",
+                 _r(de_v, 1, 2, hi=False) if ibd else "—", f"有利子負債 {_y(ibd)}　目安：1倍未満"),
+                ("有利子負債月商倍率", "有利子負債 ÷ 月商",      f"{ibd_m:.1f}ヶ月" if ibd else "—",
+                 _r(ibd_m, 6, 10, hi=False) if ibd else "—", "目安：6ヶ月未満"),
+                ("有利子負債償還年数", "有利子負債 ÷ EBITDA",    f"{ibd_yr:.1f}年" if (ibd and ebitda) else "—",
+                 _r(ibd_yr, 5, 10, hi=False) if (ibd and ebitda) else "—", f"EBITDA={_y(ebitda)}　目安：5年未満"),
+                ("ネット有利子負債",   "有利子負債 − 現預金",    _y(ibd - cd) if ibd else "—", "", f"{_y(ibd)} − {_y(cd)}"),
+            ), hide_index=True, use_container_width=True)
+
     # ─── 出力 ─────────────────────────────────────────────────────────────────
     if stmts:
         st.divider()
